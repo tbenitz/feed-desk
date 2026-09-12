@@ -66,24 +66,27 @@ async function catalog(n){
   }).filter(x=>x.videoId);
 }
 
-function dedupe(list){
-  const seen=new Set(), out=[];
-  for(const f of list){
+function usedKeys(){
+  const s=new Set();
+  for(const t of tiles.values()){
+    const f=t.feed||{};
     const k=f.videoId||f.channel||f.url;
-    if(!k||seen.has(k)) continue;
-    seen.add(k); out.push(f);
+    if(k) s.add(k);
   }
-  return out;
+  return s;
 }
 
-async function gather(kind, extras){
-  const base = constantFeeds(kind);
-  if(!extras) return base;
+async function extrasOnly(kind){
   const jobs=[];
   if(kind!=="live") jobs.push(caltrans(8).catch(e=>{setSrc("Caltrans extra","bad",e.message);return[];}));
   if(kind!=="traffic") jobs.push(catalog(6).catch(e=>{setSrc("Live catalog","bad",e.message);return[];}));
   const more = jobs.length ? (await Promise.all(jobs)).flat() : [];
-  return dedupe(base.concat(more));
+  const seen=usedKeys();
+  return more.filter(f=>{
+    const k=f.videoId||f.channel||f.url;
+    if(!k||seen.has(k)) return false;
+    seen.add(k); return true;
+  });
 }
 
 function addTile(feed){
@@ -172,11 +175,16 @@ function remove(id){
 function clearAll(){ [...tiles.keys()].forEach(remove); }
 
 async function scan(extras){
-  logStatus(extras?"Adding extras…":"Loading constant feeds…");
   try{
-    const feeds=await gather(document.getElementById("kind").value, extras);
-    if(!extras) clearAll();
-    feeds.forEach(addTile);
+    if(extras){
+      logStatus("Adding extras…");
+      const feeds=await extrasOnly(document.getElementById("kind").value);
+      feeds.forEach(addTile);
+    } else {
+      logStatus("Loading constant feeds…");
+      clearAll();
+      constantFeeds(document.getElementById("kind").value).forEach(addTile);
+    }
     logStatus("On air: "+tiles.size+" panels");
   }catch(e){ logStatus("Scan failed: "+e.message); }
 }
