@@ -17,6 +17,19 @@ function uid(){ return "t"+Math.random().toString(36).slice(2,8); }
 function ytId(u){ const m=String(u||"").match(/(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:null; }
 function esc(s){ return String(s||"").replace(/[&<>"]/g,c=>({"&":"&","<":"<",">":">","\"":"""}[c])); }
 
+function matchKind(kind, f){
+  if(kind==="mix") return true;
+  if(kind==="traffic") return f.kind==="traffic";
+  return f.kind!=="traffic";
+}
+
+function constantFeeds(kind){
+  const list = Array.isArray(window.CONSTANT_FEEDS) ? window.CONSTANT_FEEDS : [];
+  const out = list.filter(f => matchKind(kind, f));
+  setSrc("Constant desk", out.length?"ok":"bad", out.length+" baked-in");
+  return out;
+}
+
 async function getJSON(url, ms=10000){
   const ctrl=new AbortController();
   const t=setTimeout(()=>ctrl.abort(), ms);
@@ -28,7 +41,7 @@ async function getJSON(url, ms=10000){
 }
 
 async function caltrans(n){
-  setSrc("Caltrans","wait");
+  setSrc("Caltrans extra","wait");
   const d=shuffle(["d3","d4","d7","d8","d11","d12"])[0];
   const num=d.slice(1).padStart(2,"0");
   const data=await getJSON(`https://cwwp2.dot.ca.gov/data/${d}/cctv/cctvStatusD${num}.json`,12000);
@@ -38,57 +51,39 @@ async function caltrans(n){
     const img=(((c.imageData||{}).static)||{}).currentImageURL;
     if(c.inService==="true" && img) out.push({title:loc.locationName||"Caltrans",kind:"traffic",source:"Caltrans",type:"image",url:img,refresh:15000});
   }
-  setSrc("Caltrans", out.length?"ok":"bad", out.length+" cams");
+  setSrc("Caltrans extra", out.length?"ok":"bad", out.length+" cams");
   return shuffle(out).slice(0,n);
 }
 
 async function catalog(n){
   setSrc("Live catalog","wait");
   const data=await getJSON("https://cdn.jsdelivr.net/gh/willytop8/Live-Environment-Streams@main/data/US.json",20000);
-  const usable=(data.features||[]).map(f=>f.properties||{}).filter(p=>p.status==="active"&&p.url&&(p.url_type==="youtube"||p.url_type==="hls"));
-  setSrc("Live catalog","ok", usable.length+" usable");
+  const usable=(data.features||[]).map(f=>f.properties||{}).filter(p=>p.status==="active"&&p.url&&p.url_type==="youtube");
+  setSrc("Live catalog", usable.length?"ok":"bad", usable.length+" YT");
   return shuffle(usable).slice(0,n).map(p=>{
     const id=ytId(p.url);
-    if(id) return {title:p.display_name||p.name,kind:p.environment==="traffic"?"traffic":"webcam",source:p.source_family||"catalog",type:"youtube",videoId:id};
-    return {title:p.display_name||p.name,kind:"traffic",source:p.source_family||"catalog",type:"hls",url:p.url};
-  });
+    return {title:p.display_name||p.name,kind:p.environment==="traffic"?"traffic":"webcam",source:"catalog",type:"youtube",videoId:id};
+  }).filter(x=>x.videoId);
 }
 
-async function rss(id, label, n){
-  setSrc(label,"wait");
-  const data=await getJSON("https://api.rss2json.com/v1/api.json?rss_url="+encodeURIComponent("https://www.youtube.com/feeds/videos.xml?channel_id="+id),10000);
-  const items=(data.items||[]).map(i=>({title:i.title,kind:"social",source:label,type:"youtube",videoId:ytId(i.link)})).filter(x=>x.videoId);
-  setSrc(label, items.length?"ok":"bad", items.length+" new");
-  return items.slice(0,n);
-}
-
-function wires(){
-  setSrc("News wires","ok","live channels");
-  return shuffle([
-    {title:"ABC News Live",kind:"news",type:"youtube-channel",channel:"UCBi2mrWuNuyYy4gbM6fU18Q"},
-    {title:"Sky News",kind:"news",type:"youtube-channel",channel:"UCoMdktPbSTixAyNGwb-UYkQ"},
-    {title:"Al Jazeera EN",kind:"news",type:"youtube-channel",channel:"UCNye-wNBqNL5ZzHSJj3l8Bg"},
-    {title:"NASA Live",kind:"news",type:"youtube-channel",channel:"UCLA_DiR1FfKNvjuUpBHmylQ"},
-    {title:"France 24",kind:"news",type:"youtube-channel",channel:"UCQfwfsi5VrQ8yKZ-UWmYOJQ"}
-  ]).slice(0,3);
-}
-
-async function gather(kind, n){
-  const jobs=[];
-  if(kind!=="live") jobs.push(caltrans(Math.ceil(n/2)).catch(e=>{setSrc("Caltrans","bad",e.message);return[];}));
-  jobs.push(catalog(Math.ceil(n/2)).catch(e=>{setSrc("Live catalog","bad",e.message);return[];}));
-  if(kind!=="traffic"){
-    jobs.push(Promise.resolve(wires()));
-    jobs.push(rss("UCBi2mrWuNuyYy4gbM6fU18Q","ABC",2).catch(e=>{setSrc("ABC","bad",e.message);return[];}));
-  }
-  const all=shuffle((await Promise.all(jobs)).flat());
+function dedupe(list){
   const seen=new Set(), out=[];
-  for(const f of all){
+  for(const f of list){
     const k=f.videoId||f.channel||f.url;
     if(!k||seen.has(k)) continue;
     seen.add(k); out.push(f);
   }
-  return out.slice(0,n);
+  return out;
+}
+
+async function gather(kind, extras){
+  const base = constantFeeds(kind);
+  if(!extras) return base;
+  const jobs=[];
+  if(kind!=="live") jobs.push(caltrans(8).catch(e=>{setSrc("Caltrans extra","bad",e.message);return[];}));
+  if(kind!=="traffic") jobs.push(catalog(6).catch(e=>{setSrc("Live catalog","bad",e.message);return[];}));
+  const more = jobs.length ? (await Promise.all(jobs)).flat() : [];
+  return dedupe(base.concat(more));
 }
 
 function addTile(feed){
@@ -176,19 +171,19 @@ function remove(id){
 }
 function clearAll(){ [...tiles.keys()].forEach(remove); }
 
-async function scan(n){
-  logStatus("Scanning…");
+async function scan(extras){
+  logStatus(extras?"Adding extras…":"Loading constant feeds…");
   try{
-    const feeds=await gather(document.getElementById("kind").value, n);
-    if(!feeds.length){ logStatus("No feeds. Some sources block GitHub Pages."); return; }
+    const feeds=await gather(document.getElementById("kind").value, extras);
+    if(!extras) clearAll();
     feeds.forEach(addTile);
     logStatus("On air: "+tiles.size+" panels");
   }catch(e){ logStatus("Scan failed: "+e.message); }
 }
 
 document.getElementById("cols").onchange=e=>wall.style.setProperty("--cols", e.target.value);
-document.getElementById("scan").onclick=()=>{ clearAll(); scan(9); };
-document.getElementById("more").onclick=()=>scan(4);
+document.getElementById("scan").onclick=()=>scan(false);
+document.getElementById("more").onclick=()=>scan(true);
 document.getElementById("clear").onclick=clearAll;
 document.getElementById("add").onclick=()=>{
   const raw=document.getElementById("custom").value.trim(); if(!raw) return;
@@ -198,4 +193,4 @@ document.getElementById("add").onclick=()=>{
   else addTile({title:"Custom",kind:"live",type:"image",url:raw,refresh:8000});
   document.getElementById("custom").value="";
 };
-scan(8);
+scan(false);
