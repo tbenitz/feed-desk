@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="referrer" content="origin" />
   <title>FEED DESK</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
   <style>
     :root { --bg:#07090d; --line:#2a3544; --text:#e8eef6; --muted:#8b9bb0; --red:#ff3b3b; --green:#3dff8a; }
     * { box-sizing: border-box; }
@@ -13,26 +14,26 @@
     header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--line); background:#10151c; }
     .dot { width:8px; height:8px; border-radius:50%; background:var(--red); box-shadow:0 0 8px var(--red); }
     .bug { font-weight:800; letter-spacing:.08em; font-size:13px; display:flex; gap:8px; align-items:center; }
-    .status { flex:1; font-size:12px; color:var(--muted); min-width:160px; }
+    .status { flex:1; font-size:12px; color:var(--muted); min-width:140px; }
     button, select, input { background:#161d27; color:var(--text); border:1px solid var(--line); border-radius:4px; padding:6px 10px; font-size:12px; }
     button { cursor:pointer; } button.primary { background:#1e3a5f; }
     .workspace { flex:1; display:flex; min-height:0; }
-    .side { width:200px; border-right:1px solid var(--line); overflow:auto; padding:8px; font-size:12px; }
-    .src { display:flex; justify-content:space-between; padding:4px 0; }
-    .ok { color:var(--green); }
-    #wall { flex:1; overflow:auto; padding:8px; display:grid; grid-template-columns:repeat(var(--cols,4),minmax(170px,1fr)); grid-auto-rows:minmax(140px,22vh); gap:8px; }
+    .side { width:220px; border-right:1px solid var(--line); overflow:auto; padding:8px; font-size:12px; }
+    .side h3 { margin:12px 0 6px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .side button { display:block; width:100%; text-align:left; margin:0 0 6px; }
+    #wall { flex:1; overflow:auto; padding:8px; display:grid; grid-template-columns:repeat(var(--cols,2),minmax(220px,1fr)); grid-auto-rows:minmax(180px,36vh); gap:8px; }
     #wall.focus-mode { grid-template-columns:2fr 1fr; }
-    #wall.focus-mode .tile.featured { grid-row:1 / span 3; min-height:58vh; }
-    .tile { background:#000; border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; resize:both; overflow:hidden; min-width:150px; min-height:110px; }
+    #wall.focus-mode .tile.featured { grid-row:1 / span 2; min-height:58vh; }
+    .tile { background:#000; border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; resize:both; overflow:hidden; min-width:180px; min-height:140px; }
     .tile.featured { outline:2px solid #ff4d4d; } .tile.audio-on { outline:2px solid var(--green); }
     .bar { display:flex; gap:6px; align-items:center; padding:4px 6px; background:rgba(8,12,18,.92); font-size:11px; }
     .bar .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
     .badge { font-size:9px; text-transform:uppercase; padding:1px 5px; border-radius:3px; background:#243044; }
     .badge.traffic { background:#1c3a28; color:#9dffc0; }
-    .badge.news, .badge.live { background:#14243a; color:#9ecbff; }
+    .badge.news, .badge.live, .badge.iptv { background:#14243a; color:#9ecbff; }
     .iconbtn { background:none; border:0; color:var(--muted); cursor:pointer; }
     .stage { flex:1; position:relative; background:#111; min-height:0; }
-    .stage img, .stage iframe { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border:0; background:#000; }
+    .stage img, .stage iframe, .stage video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border:0; background:#000; }
     .broken { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; text-align:center; padding:8px; }
   </style>
 </head>
@@ -40,25 +41,29 @@
   <header>
     <div class="bug"><span class="dot"></span> FEED DESK</div>
     <div class="status" id="status">Starting...</div>
-    <select id="kind">
-      <option value="mix" selected>Mix</option>
-      <option value="traffic">Traffic</option>
-      <option value="live">Live / news</option>
-    </select>
     <select id="cols">
+      <option value="2" selected>2</option>
       <option value="3">3</option>
-      <option value="4" selected>4</option>
-      <option value="5">5</option>
+      <option value="4">4</option>
     </select>
-    <button class="primary" id="scan" type="button">RELOAD</button>
     <button id="clear" type="button">clear</button>
-    <input id="custom" placeholder="YouTube or image URL" />
-    <button id="add" type="button">add</button>
+    <input id="custom" placeholder="YouTube / m3u8 / image URL" />
+    <button id="add" type="button">add url</button>
   </header>
   <div class="workspace">
-    <aside class="side" id="sources"></aside>
+    <aside class="side">
+      <h3>Start</h3>
+      <button id="reset4" class="primary" type="button">Load 4 starters</button>
+      <h3>Add a group</h3>
+      <button data-group="news" type="button">+ News YouTube</button>
+      <button data-group="traffic" type="button">+ CA traffic stills</button>
+      <button data-group="iptv" type="button">+ IPTV HLS</button>
+      <h3>Add one</h3>
+      <select id="pick"></select>
+      <button id="addone" type="button">add selected</button>
+    </aside>
     <div id="wall"></div>
   </div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
